@@ -844,6 +844,13 @@
                             <span id="camera-opacity-val">40%</span>
                         </div>
                     </div>
+                    <div class="setting-item vertical">
+                        <label for="audio-delay-slider">Sincronização de Áudio (Ajuste Fino)</label>
+                        <div class="slider-container">
+                            <input type="range" id="audio-delay-slider" min="0" max="500" value="100" step="50" oninput="updateAudioDelay(this.value)">
+                            <span id="audio-delay-val">100ms</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Seção de Texto -->
@@ -919,6 +926,13 @@
         let recordingTimerInterval = null;
         let videoBlob = null;
         let currentCameraId = '';
+
+        // Controle de Sincronização de Áudio (Web Audio API)
+        let audioDelayMs = 100;
+        let audioCtx = null;
+        let audioSourceNode = null;
+        let delayNode = null;
+        let audioDestinationNode = null;
 
         // Controle de Gravação Vertical Canvas (1080x1920)
         let recordingCanvas = null;
@@ -1037,6 +1051,14 @@
             const opacityDecimal = val / 100;
             document.documentElement.style.setProperty('--camera-opacity', opacityDecimal);
             document.getElementById('camera-opacity-val').textContent = (100 - val) + '%';
+        }
+
+        function updateAudioDelay(val) {
+            audioDelayMs = parseInt(val, 10);
+            document.getElementById('audio-delay-val').textContent = val + 'ms';
+            if (isRecording && delayNode && audioCtx) {
+                delayNode.delayTime.setValueAtTime(audioDelayMs / 1000, audioCtx.currentTime);
+            }
         }
 
         function toggleMirror(checked) {
@@ -1204,7 +1226,21 @@
             if (isRecording) {
                 stopRecording();
             } else {
+                initAudioContextOnUserGesture();
                 startRecordingWithCountdown();
+            }
+        }
+
+        function initAudioContextOnUserGesture() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) {
+                console.warn("Não foi possível pré-inicializar o AudioContext:", e);
             }
         }
 
@@ -1304,7 +1340,7 @@
             }
         }
 
-        function startRecording() {
+        async function startRecording() {
             recordedChunks = [];
             const mimeType = getSupportedMimeType();
             
@@ -1344,9 +1380,51 @@
             // Captura o stream do canvas a 30fps
             const canvasStream = recordingCanvas.captureStream(30);
             
-            // Obtém as tracks de vídeo do canvas e de áudio do microfone
+            // Obtém as tracks de vídeo do canvas e aplica delay no áudio do microfone para sincronização perfeita
             const videoTracks = canvasStream.getVideoTracks();
-            const audioTracks = mediaStream ? mediaStream.getAudioTracks() : [];
+            let audioTracks = [];
+            
+            if (mediaStream && mediaStream.getAudioTracks().length > 0) {
+                if (audioDelayMs > 0) {
+                    try {
+                        // Inicializa AudioContext se não existir
+                        if (!audioCtx) {
+                            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        }
+                        // Garante que está ativo
+                        if (audioCtx.state === 'suspended') {
+                            await audioCtx.resume();
+                        }
+                        
+                        // Desconecta conexões antigas por garantia
+                        if (audioSourceNode) {
+                            try { audioSourceNode.disconnect(); } catch(e) {}
+                        }
+                        if (delayNode) {
+                            try { delayNode.disconnect(); } catch(e) {}
+                        }
+                        
+                        // Configura os nós do AudioContext
+                        audioSourceNode = audioCtx.createMediaStreamSource(mediaStream);
+                        // Atraso configurável com limite de 1.0 segundo
+                        delayNode = audioCtx.createDelay(1.0);
+                        delayNode.delayTime.setValueAtTime(audioDelayMs / 1000, audioCtx.currentTime);
+                        
+                        audioDestinationNode = audioCtx.createMediaStreamDestination();
+                        
+                        // Conecta os nós: Entrada -> Delay -> Destino
+                        audioSourceNode.connect(delayNode);
+                        delayNode.connect(audioDestinationNode);
+                        
+                        audioTracks = audioDestinationNode.stream.getAudioTracks();
+                    } catch (e) {
+                        console.error("Erro ao aplicar atraso de áudio com Web Audio API:", e);
+                        audioTracks = mediaStream.getAudioTracks();
+                    }
+                } else {
+                    audioTracks = mediaStream.getAudioTracks();
+                }
+            }
             
             const combinedStream = new MediaStream();
             if (videoTracks.length > 0) {
@@ -1436,6 +1514,17 @@
             // Limpa referências do canvas
             recordingCanvas = null;
             recordingCtx = null;
+
+            // Desconecta e limpa os nós de áudio do AudioContext para liberar recursos
+            if (audioSourceNode) {
+                try { audioSourceNode.disconnect(); } catch(e) {}
+                audioSourceNode = null;
+            }
+            if (delayNode) {
+                try { delayNode.disconnect(); } catch(e) {}
+                delayNode = null;
+            }
+            audioDestinationNode = null;
 
             // Reseta controles
             resetControlsState();
