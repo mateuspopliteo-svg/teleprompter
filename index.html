@@ -210,6 +210,12 @@
             word-wrap: break-word;
         }
 
+        /* Garante cor branca e sem fundo para qualquer elemento interno ou colado */
+        #prompter-text * {
+            color: #ffffff !important;
+            background-color: transparent !important;
+        }
+
         /* Guia visual de leitura centralizado */
         #reading-guide {
             position: absolute;
@@ -943,6 +949,31 @@
 
         const scrollContainer = document.getElementById('scroll-container');
         const prompterText = document.getElementById('prompter-text');
+
+        // Impedir formatação externa ao colar texto (mantém cor branca e texto limpo)
+        prompterText.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+            
+            if (document.queryCommandSupported('insertText')) {
+                document.execCommand('insertText', false, text);
+            } else {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+                selection.deleteFromDocument();
+                
+                const lines = text.split('\n');
+                const fragment = document.createDocumentFragment();
+                for (let i = 0; i < lines.length; i++) {
+                    fragment.appendChild(document.createTextNode(lines[i]));
+                    if (i < lines.length - 1) {
+                        fragment.appendChild(document.createElement('br'));
+                    }
+                }
+                selection.getRangeAt(0).insertNode(fragment);
+                selection.collapseToEnd();
+            }
+        });
 
         // Sincronizar posição de rolagem caso o usuário role manualmente
         scrollContainer.addEventListener('scroll', () => {
