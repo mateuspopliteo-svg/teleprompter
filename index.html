@@ -920,6 +920,11 @@
         let videoBlob = null;
         let currentCameraId = '';
 
+        // Controle de Gravação Vertical Canvas (1080x1920)
+        let recordingCanvas = null;
+        let recordingCtx = null;
+        let canvasLoopId = null;
+
         const scrollContainer = document.getElementById('scroll-container');
         const prompterText = document.getElementById('prompter-text');
 
@@ -1068,13 +1073,12 @@
                     stopCamera();
                 }
 
-                // Tenta câmera frontal por padrão com proporção 9:16
+                // Tenta câmera frontal por padrão
                 const constraints = {
                     video: {
                         facingMode: 'user',
-                        aspectRatio: { ideal: 9/16 },
-                        width: { ideal: 720 },
-                        height: { ideal: 1280 }
+                        width: { ideal: 1080 },
+                        height: { ideal: 1920 }
                     },
                     audio: true
                 };
@@ -1165,9 +1169,8 @@
                 const constraints = {
                     video: {
                         deviceId: { exact: deviceId },
-                        aspectRatio: { ideal: 9/16 },
-                        width: { ideal: 720 },
-                        height: { ideal: 1280 }
+                        width: { ideal: 1080 },
+                        height: { ideal: 1920 }
                     },
                     audio: true
                 };
@@ -1255,6 +1258,37 @@
             return '';
         }
 
+        // Loop de renderização no canvas para recortar e redimensionar o vídeo para 1080x1920 (9:16)
+        function drawFrame() {
+            if (!isRecording) return;
+            const video = document.getElementById('camera-preview');
+            if (video && video.readyState >= 2) {
+                const W = video.videoWidth;
+                const H = video.videoHeight;
+                
+                const targetWidth = 1080;
+                const targetHeight = 1920;
+                const targetAspect = targetWidth / targetHeight;
+                const videoAspect = W / H;
+                
+                let sx = 0, sy = 0, sWidth = W, sHeight = H;
+                
+                if (videoAspect > targetAspect) {
+                    // Vídeo mais largo que 9:16 (ex: landscape 16:9)
+                    sWidth = H * targetAspect;
+                    sx = (W - sWidth) / 2;
+                } else {
+                    // Vídeo mais alto que 9:16 (caso incomum)
+                    sHeight = W / targetAspect;
+                    sy = (H - sHeight) / 2;
+                }
+                
+                recordingCtx.clearRect(0, 0, targetWidth, targetHeight);
+                recordingCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+            }
+            canvasLoopId = requestAnimationFrame(drawFrame);
+        }
+
         function startRecording() {
             recordedChunks = [];
             const mimeType = getSupportedMimeType();
@@ -1264,12 +1298,33 @@
                 options.mimeType = mimeType;
             }
 
+            // Inicializa o canvas off-screen para gravação vertical 1080x1920
+            recordingCanvas = document.createElement('canvas');
+            recordingCanvas.width = 1080;
+            recordingCanvas.height = 1920;
+            recordingCtx = recordingCanvas.getContext('2d');
+
+            // Captura o stream do canvas a 30fps
+            const canvasStream = recordingCanvas.captureStream(30);
+            
+            // Obtém as tracks de vídeo do canvas e de áudio do microfone
+            const videoTracks = canvasStream.getVideoTracks();
+            const audioTracks = mediaStream ? mediaStream.getAudioTracks() : [];
+            
+            const combinedStream = new MediaStream();
+            if (videoTracks.length > 0) {
+                combinedStream.addTrack(videoTracks[0]);
+            }
+            if (audioTracks.length > 0) {
+                combinedStream.addTrack(audioTracks[0]);
+            }
+
             try {
-                mediaRecorder = new MediaRecorder(mediaStream, options);
+                mediaRecorder = new MediaRecorder(combinedStream, options);
             } catch (err) {
                 console.error("Erro ao criar MediaRecorder, tentando padrão:", err);
                 try {
-                    mediaRecorder = new MediaRecorder(mediaStream);
+                    mediaRecorder = new MediaRecorder(combinedStream);
                 } catch (e) {
                     alert("Seu navegador não suporta gravação de mídia. Detalhes: " + e.message);
                     resetControlsState();
@@ -1299,6 +1354,9 @@
                 openModal();
             };
 
+            // Inicia o loop de desenho do canvas
+            canvasLoopId = requestAnimationFrame(drawFrame);
+
             mediaRecorder.start();
             isRecording = true;
 
@@ -1325,12 +1383,21 @@
         function stopRecording() {
             if (!isRecording) return;
 
+            if (canvasLoopId) {
+                cancelAnimationFrame(canvasLoopId);
+                canvasLoopId = null;
+            }
+
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
             }
 
             isRecording = false;
             clearInterval(recordingTimerInterval);
+
+            // Limpa referências do canvas
+            recordingCanvas = null;
+            recordingCtx = null;
 
             // Reseta controles
             resetControlsState();
