@@ -1075,13 +1075,12 @@
                     stopCamera();
                 }
 
-                // Tenta câmera frontal por padrão com proporção 9:16
+                // Solicita resolução padrão de 1280x720 (16:9) para obter a lente grande-angular nativa da câmera (sem zoom digital forçado)
                 const constraints = {
                     video: {
                         facingMode: 'user',
-                        aspectRatio: { ideal: 9/16 },
-                        width: { ideal: 720 },
-                        height: { ideal: 1280 }
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     },
                     audio: true
                 };
@@ -1172,9 +1171,8 @@
                 const constraints = {
                     video: {
                         deviceId: { exact: deviceId },
-                        aspectRatio: { ideal: 9/16 },
-                        width: { ideal: 720 },
-                        height: { ideal: 1280 }
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     },
                     audio: true
                 };
@@ -1262,7 +1260,7 @@
             return '';
         }
 
-        // Loop de renderização no canvas para recortar e redimensionar o vídeo para 1080x1920 (9:16)
+        // Loop de renderização no canvas para recortar e redimensionar o vídeo para a proporção vertical (9:16)
         function drawFrame(timestamp) {
             if (!isRecording) return;
             
@@ -1284,8 +1282,8 @@
                 const W = video.videoWidth;
                 const H = video.videoHeight;
                 
-                const targetWidth = 1080;
-                const targetHeight = 1920;
+                const targetWidth = recordingCanvas ? recordingCanvas.width : 720;
+                const targetHeight = recordingCanvas ? recordingCanvas.height : 1280;
                 const targetAspect = targetWidth / targetHeight;
                 const videoAspect = W / H;
                 
@@ -1315,11 +1313,33 @@
                 options.mimeType = mimeType;
             }
 
-            // Inicializa o canvas off-screen para gravação vertical 1080x1920
+            // Inicializa o canvas off-screen para gravação vertical de 720x1280 (HD 9:16)
+            // A resolução 720x1280 reduz em 55% o processamento do canvas em tempo real, resolvendo a dessincronização de áudio
             recordingCanvas = document.createElement('canvas');
-            recordingCanvas.width = 1080;
-            recordingCanvas.height = 1920;
+            recordingCanvas.width = 720;
+            recordingCanvas.height = 1280;
             recordingCtx = recordingCanvas.getContext('2d');
+
+            // Desenha o primeiro frame imediatamente para sincronizar o início do áudio e vídeo
+            const video = document.getElementById('camera-preview');
+            if (video && video.readyState >= 2) {
+                const W = video.videoWidth;
+                const H = video.videoHeight;
+                const targetWidth = recordingCanvas.width;
+                const targetHeight = recordingCanvas.height;
+                const targetAspect = targetWidth / targetHeight;
+                const videoAspect = W / H;
+                let sx = 0, sy = 0, sWidth = W, sHeight = H;
+                if (videoAspect > targetAspect) {
+                    sWidth = H * targetAspect;
+                    sx = (W - sWidth) / 2;
+                } else {
+                    sHeight = W / targetAspect;
+                    sy = (H - sHeight) / 2;
+                }
+                recordingCtx.clearRect(0, 0, targetWidth, targetHeight);
+                recordingCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+            }
 
             // Captura o stream do canvas a 30fps
             const canvasStream = recordingCanvas.captureStream(30);
