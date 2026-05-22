@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Teleprompter Pro com Gravador</title>
+    <!-- Google Fonts Inter para visual premium -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --font-size: 40px;
+            --camera-opacity: 0.4;
+            --text-transform: none;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: radial-gradient(circle at center, #151823 0%, #030408 100%);
+            color: #f3f4f6;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Container Proporção 9:16 */
+        #app-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-height: 100vh;
+            aspect-ratio: 9 / 16;
+            background-color: #080808;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 50px rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 32px;
+        }
+
+        /* Responsividade para celular ou telas de proporção vertical */
+        @media (max-aspect-ratio: 9/16) {
+            #app-container {
+                aspect-ratio: auto;
+                height: 100vh;
+                width: 100vw;
+                border-radius: 0;
+                border: none;
+            }
+        }
+
+        /* Preview da câmera em tela cheia */
+        #camera-preview {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            display: none;
+            /* Espelha por padrão para parecer um espelho natural */
+            transform: scaleX(-1);
+        }
+
+        /* Sobreposição escura ajustável para legibilidade do texto */
+        #camera-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, var(--camera-opacity));
+            z-index: 1;
+            pointer-events: none;
+            transition: background-color 0.2s ease;
+        }
+
+        /* Cabeçalho estilo glass */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 70px;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0) 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+        }
+
+        .logo span {
+            color: #3b82f6;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .status-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: #9ca3af;
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .rec-badge {
+            font-size: 11px;
+            font-weight: 800;
+            padding: 6px 12px;
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .rec-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #ef4444;
+            border-radius: 50%;
+            display: inline-block;
+            animation: blink 1s infinite alternate;
+        }
+
+        @keyframes blink {
+            from { opacity: 1; }
+            to { opacity: 0.2; }
+        }
+
+        /* Recipiente do texto de rolagem */
+        .scroll-container {
+            flex: 1;
+            width: 100%;
+            overflow-y: auto;
+            z-index: 5;
+            padding-top: 38vh;
+            padding-bottom: 50vh;
+            padding-left: 24px;
+            padding-right: 24px;
+            scroll-behavior: auto;
+        }
+
+        /* Oculta barras de rolagem */
+        .scroll-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scroll-container {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        #prompter-text {
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            outline: none;
+            font-size: var(--font-size);
+            line-height: 1.6;
+            font-weight: 700;
+            text-align: center;
+            color: #ffffff;
+            /* Sombra para destaque total sobre a câmera */
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 4px 16px rgba(0, 0, 0, 0.7);
+            transform: var(--text-transform);
+            transform-origin: center top;
+            transition: transform 0.2s ease;
+            word-wrap: break-word;
+        }
+
+        /* Guia visual de leitura centralizado */
+        #reading-guide {
+            position: absolute;
+            top: 38%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            max-width: 900px;
+            height: 110px;
+            background: rgba(255, 255, 255, 0.03);
+            border-top: 2px dashed rgba(255, 255, 255, 0.15);
+            border-bottom: 2px dashed rgba(255, 255, 255, 0.15);
+            z-index: 4;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-sizing: border-box;
+            padding: 0 10px;
+        }
+
+        #reading-guide::before {
+            content: '▶';
+            color: #3b82f6;
+            font-size: 18px;
+            margin-left: 4px;
+            filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.5));
+        }
+
+        #reading-guide::after {
+            content: '◀';
+            color: #3b82f6;
+            font-size: 18px;
+            margin-right: 4px;
+            filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.5));
+        }
+
+        /* Painel de Controle Inferior */
+        .control-panel {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 32px);
+            max-width: 480px;
+            background: rgba(18, 18, 18, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .control-group:last-child {
+            justify-content: flex-end;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 10px 14px;
+            height: 46px;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: white;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            flex: 1.2;
+        }
+
+        .btn-primary:active {
+            background-color: #1d4ed8;
+            transform: scale(0.97);
+        }
+
+        .btn-record {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            flex: 1;
+        }
+
+        .btn-record:active {
+            background-color: rgba(239, 68, 68, 0.25);
+            transform: scale(0.97);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            width: 46px;
+            padding: 0;
+            border-radius: 16px;
+        }
+
+        .btn-secondary:active {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .btn-success {
+            background-color: #10b981;
+            flex: 1;
+        }
+
+        .btn-success:active {
+            background-color: #059669;
+            transform: scale(0.97);
+        }
+
+        .btn-success:disabled {
+            background-color: rgba(255, 255, 255, 0.03);
+            color: rgba(255, 255, 255, 0.2);
+            border: none;
+            cursor: not-allowed;
+        }
+
+        .btn-success:disabled svg {
+            opacity: 0.2;
+        }
+
+        /* Efeito de gravação ativa */
+        @keyframes pulse {
+            0% {
+                transform: scale(0.97);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+            }
+            70% {
+                transform: scale(1.02);
+                box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+            }
+            100% {
+                transform: scale(0.97);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .recording-active {
+            animation: pulse 1.5s infinite;
+            background-color: #ef4444 !important;
+            color: white !important;
+            border-color: transparent !important;
+        }
+
+        .record-circle {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #ef4444;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .recording-active .record-circle {
+            border-radius: 2px;
+            background-color: #fff;
+            width: 8px;
+            height: 8px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Drawer de Configurações */
+        .settings-drawer {
+            position: absolute;
+            bottom: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 500px;
+            max-height: 80%;
+            background: rgba(12, 12, 12, 0.95);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            border-top-left-radius: 28px;
+            border-top-right-radius: 28px;
+            z-index: 100;
+            transition: bottom 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            padding: 24px;
+            overflow-y: auto;
+            box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.7);
+        }
+
+        .settings-drawer.open {
+            bottom: 0;
+        }
+
+        .drawer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .drawer-header h3 {
+            font-size: 18px;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .btn-close {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .btn-close:active {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .settings-section {
+            margin-bottom: 20px;
+        }
+
+        .settings-section h4 {
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 14px;
+            letter-spacing: 0.5px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            gap: 12px;
+        }
+
+        .setting-item.vertical {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .setting-item label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #d1d5db;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .slider-container input[type=range] {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider-container input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .slider-container input[type=range]::-webkit-slider-thumb:active {
+            transform: scale(1.2);
+        }
+
+        .slider-container span {
+            font-size: 13px;
+            font-weight: 700;
+            min-width: 45px;
+            text-align: right;
+        }
+
+        .select-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 8px 12px;
+            color: white;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            width: 100%;
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 22px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s;
+            border-radius: 22px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked+.toggle-slider {
+            background-color: #10b981;
+        }
+
+        input:checked+.toggle-slider:before {
+            transform: translateX(22px);
+        }
+
+        .btn-secondary-sm {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 12px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 700;
+            color: white;
+            cursor: pointer;
+        }
+
+        .btn-secondary-sm:active {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        /* Overlay do Countdown */
+        #countdown-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: all;
+        }
+
+        .countdown-number {
+            font-size: 130px;
+            font-weight: 900;
+            color: #ffffff;
+            animation: zoom 1s infinite;
+        }
+
+        .countdown-label {
+            font-size: 18px;
+            font-weight: 700;
+            color: #9ca3af;
+            letter-spacing: 1px;
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+
+        @keyframes zoom {
+            0% { transform: scale(0.85); opacity: 0.4; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.85); opacity: 0.4; }
+        }
+
+        /* Modal de Visualização da Gravação */
+        .modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            padding: 16px;
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #121212;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 28px;
+            max-width: 480px;
+            width: 100%;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .modal-body {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .modal-body p {
+            color: #9ca3af;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        #recorded-preview {
+            width: 100%;
+            border-radius: 14px;
+            aspect-ratio: 9/16;
+            max-height: 45vh;
+            object-fit: contain;
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .modal-footer {
+            padding: 18px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-full {
+            width: 100%;
+        }
+
+        /* Botão Seta de Rápido scroll para o topo */
+        .btn-reset {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+
+        .btn-reset:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app-container">
+        <!-- Banner de aviso se o contexto não for seguro (HTTPS) -->
+        <div id="secure-context-banner" class="hidden" style="background-color: #ea580c; color: white; padding: 14px 20px; font-size: 13px; font-weight: 700; text-align: center; z-index: 10000; position: relative; line-height: 1.4; border-bottom: 1px solid rgba(255,255,255,0.1); font-family: inherit;">
+            ⚠️ A câmera e a gravação requerem um ambiente seguro (HTTPS) para funcionar no celular. Hospede esta página online (ex: GitHub Pages ou Vercel) para utilizá-las.
+        </div>
+
+        <!-- Feed de fundo da câmera -->
+        <video id="camera-preview" autoplay playsinline muted></video>
+
+        <!-- Overlay de escurecimento -->
+        <div id="camera-overlay"></div>
+
+        <!-- Indicador de leitura focal -->
+        <div id="reading-guide"></div>
+
+        <!-- Botão de Voltar ao Início -->
+        <button class="btn-reset" onclick="resetScrollToTop()" title="Voltar ao início do roteiro">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+
+        <!-- Barra Superior -->
+        <header class="top-bar">
+            <div class="logo">Teleprompter<span>Rec</span></div>
+            <div class="status-indicators">
+                <span id="camera-status" class="status-badge">📷 Câmera Desativada</span>
+                <span id="rec-indicator" class="rec-badge hidden">
+                    <span class="rec-dot"></span> REC <span id="rec-timer">00:00</span>
+                </span>
+            </div>
+        </header>
+
+        <!-- Conteiner do Roteiro -->
+        <div id="scroll-container" class="scroll-container">
+            <div id="prompter-text" contenteditable="true" spellcheck="false">
+                Toque aqui para apagar este aviso e colar o seu roteiro.<br><br>
+                Quando estiver pronto, siga as etapas:<br>
+                1. Abra a gaveta de Ajustes (ícone de engrenagem) e clique em "Ligar Câmera". Permita o acesso.<br>
+                2. Configure a velocidade da rolagem e o tamanho da letra como preferir.<br>
+                3. Use o botão "Gravar" (círculo vermelho) para iniciar a gravação. Uma contagem regressiva de 3 segundos será exibida e o texto rolará automaticamente.<br>
+                4. Ao finalizar a leitura, toque em "Parar" no painel inferior. Uma prévia do vídeo gravado aparecerá na tela e você poderá salvá-lo no aparelho!<br><br>
+                Boa gravação!
+            </div>
+        </div>
+
+        <!-- Painel de Controles Principal -->
+        <div class="control-panel">
+            <div class="control-group">
+                <!-- Botão Iniciar/Pausar Rolagem -->
+                <button id="btn-play-pause" onclick="toggleScroll()" class="btn btn-primary" title="Iniciar ou Pausar Rolagem">
+                    <svg class="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <svg class="icon-pause hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                    <span id="txt-play-pause">Iniciar</span>
+                </button>
+
+                <!-- Botão Gravar/Parar Gravação -->
+                <button id="btn-record" onclick="handleRecordClick()" class="btn btn-record" title="Gravar Vídeo">
+                    <span class="record-icon-container">
+                        <span class="record-circle"></span>
+                    </span>
+                    <span id="txt-record">Gravar</span>
+                </button>
+            </div>
+
+            <div class="control-group">
+                <!-- Ajustes -->
+                <button onclick="toggleSettings(true)" class="btn btn-secondary" title="Ajustes de Velocidade e Câmera">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+
+                <!-- Baixar Vídeo -->
+                <button id="btn-download" onclick="downloadVideo()" class="btn btn-success" disabled title="Baixar Vídeo Gravado">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Salvar</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Gaveta de Configurações deslizante -->
+        <div id="settings-drawer" class="settings-drawer">
+            <div class="drawer-header">
+                <h3>Ajustes e Câmera</h3>
+                <button onclick="toggleSettings(false)" class="btn-close">✕</button>
+            </div>
+            <div class="drawer-body">
+                <!-- Seção de Câmera -->
+                <div class="settings-section">
+                    <h4>Câmera e Vídeo</h4>
+                    <div class="setting-item">
+                        <label>Feed da Câmera</label>
+                        <button id="btn-camera-toggle" onclick="toggleCamera()" class="btn-secondary-sm">Ligar Câmera</button>
+                    </div>
+                    <div class="setting-item vertical" id="camera-select-container">
+                        <label for="camera-select">Dispositivo de Câmera</label>
+                        <select id="camera-select" onchange="changeCameraDevice()" class="select-input">
+                            <option value="">Nenhuma câmera detectada</option>
+                        </select>
+                    </div>
+                    <div class="setting-item vertical">
+                        <label for="camera-opacity-slider">Opacidade do Fundo</label>
+                        <div class="slider-container">
+                            <input type="range" id="camera-opacity-slider" min="0" max="100" value="40" oninput="updateCameraOpacity(this.value)">
+                            <span id="camera-opacity-val">40%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seção de Texto -->
+                <div class="settings-section">
+                    <h4>Texto do Teleprompter</h4>
+                    <div class="setting-item vertical">
+                        <label for="font-size-slider">Tamanho da Letra</label>
+                        <div class="slider-container">
+                            <input type="range" id="font-size-slider" min="20" max="80" value="40" oninput="updateFontSize(this.value)">
+                            <span id="font-size-val">40px</span>
+                        </div>
+                    </div>
+                    <div class="setting-item vertical">
+                        <label for="speed-slider">Velocidade de Leitura</label>
+                        <div class="slider-container">
+                            <input type="range" id="speed-slider" min="1" max="20" value="5" oninput="updateSpeed(this.value)">
+                            <span id="speed-val">5</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label for="mirror-toggle">Espelhar Texto (Efeito Espelho)</label>
+                        <label class="switch">
+                            <input type="checkbox" id="mirror-toggle" onchange="toggleMirror(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overlay de Contagem Regressiva -->
+        <div id="countdown-overlay" class="hidden">
+            <div class="countdown-number" id="countdown-num">3</div>
+            <div class="countdown-label">Prepare-se para falar</div>
+        </div>
+
+        <!-- Modal de Preview da Gravação -->
+        <div id="preview-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Gravação Salva com Sucesso!</h3>
+                    <button onclick="closeModal()" class="btn-close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p>Assista à prévia do seu vídeo gravado abaixo:</p>
+                    <video id="recorded-preview" controls></video>
+                </div>
+                <div class="modal-footer">
+                    <button onclick="downloadVideo()" class="btn btn-success btn-full">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Download do Vídeo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lógica Principal -->
+    <script>
+        // Variáveis de Estado
+        let scrollSpeed = 5;
+        let isScrolling = false;
+        let scrollPos = 0;
+        let lastTime = 0;
+        let animationFrameId = null;
+        
+        let mediaStream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecording = false;
+        
+        let recordingSeconds = 0;
+        let recordingTimerInterval = null;
+        let videoBlob = null;
+        let currentCameraId = '';
+
+        const scrollContainer = document.getElementById('scroll-container');
+        const prompterText = document.getElementById('prompter-text');
+
+        // Sincronizar posição de rolagem caso o usuário role manualmente
+        scrollContainer.addEventListener('scroll', () => {
+            if (!isScrolling) {
+                scrollPos = scrollContainer.scrollTop;
+            }
+        });
+
+        // Detectar se o contexto é seguro ao carregar
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!window.isSecureContext) {
+                const banner = document.getElementById('secure-context-banner');
+                if (banner) {
+                    banner.classList.remove('hidden');
+                }
+            }
+        });
+
+        // Loop de Rolagem Suave com requestAnimationFrame
+        function scrollLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const elapsed = timestamp - lastTime;
+
+            if (isScrolling) {
+                // A velocidade base de pixel por segundo é proporcional ao scrollSpeed
+                // Multiplicamos por um fator (ex: 8) para tornar o slider responsivo
+                const pxPerSecond = scrollSpeed * 10;
+                scrollPos += pxPerSecond * (elapsed / 1000);
+                
+                scrollContainer.scrollTop = Math.floor(scrollPos);
+
+                // Para se chegar ao fim do roteiro
+                if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight) {
+                    stopScroll();
+                }
+            }
+
+            lastTime = timestamp;
+            if (isScrolling) {
+                animationFrameId = requestAnimationFrame(scrollLoop);
+            }
+        }
+
+        function startScroll() {
+            if (isScrolling) return;
+            isScrolling = true;
+            
+            // Impede popups de teclado no celular se clicar na tela ao iniciar
+            prompterText.setAttribute('contenteditable', 'false');
+
+            // Atualiza botões do painel
+            document.querySelector('.icon-play').classList.add('hidden');
+            document.querySelector('.icon-pause').classList.remove('hidden');
+            document.getElementById('txt-play-pause').textContent = 'Pausar';
+
+            lastTime = 0;
+            scrollPos = scrollContainer.scrollTop;
+            animationFrameId = requestAnimationFrame(scrollLoop);
+        }
+
+        function stopScroll() {
+            isScrolling = false;
+            
+            // Permite editar o texto novamente
+            prompterText.setAttribute('contenteditable', 'true');
+
+            // Atualiza botões do painel
+            document.querySelector('.icon-play').classList.remove('hidden');
+            document.querySelector('.icon-pause').classList.add('hidden');
+            document.getElementById('txt-play-pause').textContent = 'Iniciar';
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+        function toggleScroll() {
+            if (isScrolling) {
+                stopScroll();
+            } else {
+                startScroll();
+            }
+        }
+
+        function resetScrollToTop() {
+            stopScroll();
+            scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollPos = 0;
+        }
+
+        // Funções de Ajustes de Estilo / Configuração
+        function updateFontSize(val) {
+            document.documentElement.style.setProperty('--font-size', val + 'px');
+            document.getElementById('font-size-val').textContent = val + 'px';
+        }
+
+        function updateSpeed(val) {
+            scrollSpeed = parseInt(val, 10);
+            document.getElementById('speed-val').textContent = val;
+        }
+
+        function updateCameraOpacity(val) {
+            // Converte opacidade do slider (0% câmera cheia, 100% fundo preto)
+            // No CSS, --camera-opacity define a escuridão do overlay
+            const opacityDecimal = val / 100;
+            document.documentElement.style.setProperty('--camera-opacity', opacityDecimal);
+            document.getElementById('camera-opacity-val').textContent = (100 - val) + '%';
+        }
+
+        function toggleMirror(checked) {
+            if (checked) {
+                document.documentElement.style.setProperty('--text-transform', 'scaleX(-1)');
+            } else {
+                document.documentElement.style.setProperty('--text-transform', 'none');
+            }
+        }
+
+        function toggleSettings(open) {
+            const drawer = document.getElementById('settings-drawer');
+            if (open) {
+                drawer.classList.add('open');
+            } else {
+                drawer.classList.remove('open');
+            }
+        }
+
+        // Lógica de Câmera e Dispositivos
+        async function toggleCamera() {
+            if (mediaStream) {
+                stopCamera();
+            } else {
+                await startCamera();
+            }
+        }
+
+        async function startCamera() {
+            if (!window.isSecureContext) {
+                alert("⚠️ Erro de Segurança do Navegador:\n\nPor razões de segurança, os navegadores modernos bloqueiam o acesso à câmera e microfone em conexões locais não seguras (como o endereço 'content://' ou 'file://' que você está usando).\n\nPara fazer funcionar no seu celular, você precisa acessar esta página utilizando um endereço seguro HTTPS (por exemplo, hospedando gratuitamente no GitHub Pages, Vercel, Netlify ou rodando um servidor local com suporte a HTTPS).");
+                return false;
+            }
+            try {
+                if (mediaStream) {
+                    stopCamera();
+                }
+
+                // Tenta câmera frontal por padrão com proporção 9:16
+                const constraints = {
+                    video: {
+                        facingMode: 'user',
+                        aspectRatio: { ideal: 9/16 },
+                        width: { ideal: 720 },
+                        height: { ideal: 1280 }
+                    },
+                    audio: true
+                };
+
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("API getUserMedia não suportada neste contexto.");
+                }
+
+                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                const videoElement = document.getElementById('camera-preview');
+                videoElement.srcObject = mediaStream;
+                videoElement.style.display = 'block';
+
+                document.getElementById('camera-status').textContent = '📷 Câmera Ativa';
+                document.getElementById('camera-status').classList.add('active');
+                document.getElementById('btn-camera-toggle').textContent = 'Desativar Câmera';
+
+                // Preencher lista de câmeras disponíveis
+                await updateCameraList();
+                
+                return true;
+            } catch (err) {
+                console.error("Erro ao acessar câmera:", err);
+                alert("Não foi possível acessar a câmera e/ou microfone. Por favor, verifique se você concedeu permissões nas configurações do seu navegador ou se outro aplicativo já está usando a câmera.");
+                return false;
+            }
+        }
+
+        function stopCamera() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            const videoElement = document.getElementById('camera-preview');
+            videoElement.srcObject = null;
+            videoElement.style.display = 'none';
+
+            document.getElementById('camera-status').textContent = '📷 Câmera Desativada';
+            document.getElementById('camera-status').classList.remove('active');
+            document.getElementById('btn-camera-toggle').textContent = 'Ligar Câmera';
+        }
+
+        async function updateCameraList() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                const select = document.getElementById('camera-select');
+                select.innerHTML = '';
+
+                if (videoDevices.length === 0) {
+                    select.innerHTML = '<option value="">Nenhuma câmera encontrada</option>';
+                    return;
+                }
+
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Câmera ${index + 1}`;
+                    
+                    // Seleciona a câmera atual se já estiver ativa
+                    if (currentCameraId && device.deviceId === currentCameraId) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Erro ao listar câmeras:", err);
+            }
+        }
+
+        async function changeCameraDevice() {
+            if (isRecording) return; // Impede trocar no meio da gravação
+
+            const select = document.getElementById('camera-select');
+            const deviceId = select.value;
+            if (!deviceId) return;
+
+            currentCameraId = deviceId;
+
+            // Para câmera anterior
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+
+            try {
+                const constraints = {
+                    video: {
+                        deviceId: { exact: deviceId },
+                        aspectRatio: { ideal: 9/16 },
+                        width: { ideal: 720 },
+                        height: { ideal: 1280 }
+                    },
+                    audio: true
+                };
+
+                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                const videoElement = document.getElementById('camera-preview');
+                videoElement.srcObject = mediaStream;
+
+                // Detecção inteligente de espelhamento:
+                // Câmeras de selfie (geralmente contêm 'front' ou 'frontal' no nome) devem ser espelhadas.
+                // Câmeras traseiras ('back' ou 'traseira') não devem ser espelhadas.
+                const label = select.options[select.selectedIndex]?.text.toLowerCase() || '';
+                if (label.includes('back') || label.includes('traseira') || label.includes('environment')) {
+                    videoElement.style.transform = 'none';
+                } else {
+                    videoElement.style.transform = 'scaleX(-1)';
+                }
+
+                document.getElementById('camera-status').textContent = '📷 Câmera Ativa';
+                document.getElementById('camera-status').classList.add('active');
+            } catch (err) {
+                console.error("Erro ao alternar câmera:", err);
+                alert("Não foi possível acessar a câmera selecionada.");
+            }
+        }
+
+        // Lógica de Gravação
+        function handleRecordClick() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecordingWithCountdown();
+            }
+        }
+
+        async function startRecordingWithCountdown() {
+            // Garante que a câmera está ligada
+            if (!mediaStream) {
+                const cameraStarted = await startCamera();
+                if (!cameraStarted) return;
+            }
+
+            // Desabilita botões críticos durante contagem e gravação
+            document.getElementById('camera-select').disabled = true;
+            document.getElementById('btn-camera-toggle').disabled = true;
+
+            const countdownOverlay = document.getElementById('countdown-overlay');
+            const countdownNum = document.getElementById('countdown-num');
+            countdownOverlay.classList.remove('hidden');
+            
+            // Rola para o topo antes de iniciar a gravação
+            resetScrollToTop();
+
+            let count = 3;
+            countdownNum.textContent = count;
+
+            const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownNum.textContent = count;
+                } else if (count === 0) {
+                    countdownNum.textContent = "COMEÇOU!";
+                } else {
+                    clearInterval(interval);
+                    countdownOverlay.classList.add('hidden');
+                    startRecording();
+                }
+            }, 1000);
+        }
+
+        function getSupportedMimeType() {
+            const types = [
+                'video/webm;codecs=vp9,opus',
+                'video/webm;codecs=vp8,opus',
+                'video/webm',
+                'video/mp4;codecs=h264,aac',
+                'video/mp4;codecs=avc1,mp4a',
+                'video/mp4'
+            ];
+            for (const type of types) {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    return type;
+                }
+            }
+            return '';
+        }
+
+        function startRecording() {
+            recordedChunks = [];
+            const mimeType = getSupportedMimeType();
+            
+            const options = {};
+            if (mimeType) {
+                options.mimeType = mimeType;
+            }
+
+            try {
+                mediaRecorder = new MediaRecorder(mediaStream, options);
+            } catch (err) {
+                console.error("Erro ao criar MediaRecorder, tentando padrão:", err);
+                try {
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                } catch (e) {
+                    alert("Seu navegador não suporta gravação de mídia. Detalhes: " + e.message);
+                    resetControlsState();
+                    return;
+                }
+            }
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const type = mediaRecorder.mimeType || 'video/webm';
+                videoBlob = new Blob(recordedChunks, { type: type });
+                const videoURL = URL.createObjectURL(videoBlob);
+
+                // Configura preview
+                const preview = document.getElementById('recorded-preview');
+                preview.src = videoURL;
+
+                // Libera botões
+                document.getElementById('btn-download').disabled = false;
+                
+                // Abre o modal de visualização
+                openModal();
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+
+            // UI de gravação
+            const recordBtn = document.getElementById('btn-record');
+            recordBtn.classList.add('recording-active');
+            document.getElementById('txt-record').textContent = 'Parar';
+            document.getElementById('rec-indicator').classList.remove('hidden');
+
+            // Timer
+            recordingSeconds = 0;
+            updateTimerDisplay();
+            recordingTimerInterval = setInterval(() => {
+                recordingSeconds++;
+                updateTimerDisplay();
+            }, 1000);
+
+            // Inicia rolagem do texto após a contagem
+            setTimeout(() => {
+                startScroll();
+            }, 500);
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+
+            isRecording = false;
+            clearInterval(recordingTimerInterval);
+
+            // Reseta controles
+            resetControlsState();
+
+            // Para rolagem
+            stopScroll();
+        }
+
+        function resetControlsState() {
+            const recordBtn = document.getElementById('btn-record');
+            recordBtn.classList.remove('recording-active');
+            document.getElementById('txt-record').textContent = 'Gravar';
+            document.getElementById('rec-indicator').classList.add('hidden');
+            
+            document.getElementById('camera-select').disabled = false;
+            document.getElementById('btn-camera-toggle').disabled = false;
+        }
+
+        function updateTimerDisplay() {
+            const mins = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
+            const secs = (recordingSeconds % 60).toString().padStart(2, '0');
+            document.getElementById('rec-timer').textContent = `${mins}:${secs}`;
+        }
+
+        function downloadVideo() {
+            if (!videoBlob) return;
+
+            const url = URL.createObjectURL(videoBlob);
+            const a = document.createElement('a');
+            
+            // Define extensão adequada para o formato gravado
+            let extension = 'webm';
+            if (mediaRecorder && mediaRecorder.mimeType) {
+                if (mediaRecorder.mimeType.includes('mp4')) extension = 'mp4';
+            }
+            
+            a.href = url;
+            a.download = `teleprompter-gravacao-${new Date().toISOString().slice(0, 10)}.${extension}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // Funções de Modal
+        function openModal() {
+            document.getElementById('preview-modal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('preview-modal').classList.remove('open');
+            const preview = document.getElementById('recorded-preview');
+            preview.pause();
+            preview.src = '';
+        }
+    </script>
+</body>
+
+</html>
