@@ -924,6 +924,8 @@
         let recordingCanvas = null;
         let recordingCtx = null;
         let canvasLoopId = null;
+        let lastDrawTime = 0;
+        const fpsInterval = 1000 / 30; // ~33.3ms para 30 FPS
 
         const scrollContainer = document.getElementById('scroll-container');
         const prompterText = document.getElementById('prompter-text');
@@ -1073,12 +1075,13 @@
                     stopCamera();
                 }
 
-                // Tenta câmera frontal por padrão
+                // Tenta câmera frontal por padrão com proporção 9:16
                 const constraints = {
                     video: {
                         facingMode: 'user',
-                        width: { ideal: 1080 },
-                        height: { ideal: 1920 }
+                        aspectRatio: { ideal: 9/16 },
+                        width: { ideal: 720 },
+                        height: { ideal: 1280 }
                     },
                     audio: true
                 };
@@ -1169,8 +1172,9 @@
                 const constraints = {
                     video: {
                         deviceId: { exact: deviceId },
-                        width: { ideal: 1080 },
-                        height: { ideal: 1920 }
+                        aspectRatio: { ideal: 9/16 },
+                        width: { ideal: 720 },
+                        height: { ideal: 1280 }
                     },
                     audio: true
                 };
@@ -1259,8 +1263,22 @@
         }
 
         // Loop de renderização no canvas para recortar e redimensionar o vídeo para 1080x1920 (9:16)
-        function drawFrame() {
+        function drawFrame(timestamp) {
             if (!isRecording) return;
+            
+            canvasLoopId = requestAnimationFrame(drawFrame);
+
+            // Controle de taxa de quadros (FPS) para economizar processamento e evitar travamentos
+            if (!timestamp) timestamp = performance.now();
+            const elapsed = timestamp - lastDrawTime;
+
+            if (elapsed < fpsInterval) {
+                return; // Pula o quadro se for antes do intervalo necessário
+            }
+
+            // Ajusta o tempo do último desenho descontando atrasos residuais
+            lastDrawTime = timestamp - (elapsed % fpsInterval);
+
             const video = document.getElementById('camera-preview');
             if (video && video.readyState >= 2) {
                 const W = video.videoWidth;
@@ -1286,7 +1304,6 @@
                 recordingCtx.clearRect(0, 0, targetWidth, targetHeight);
                 recordingCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
             }
-            canvasLoopId = requestAnimationFrame(drawFrame);
         }
 
         function startRecording() {
@@ -1355,6 +1372,7 @@
             };
 
             // Inicia o loop de desenho do canvas
+            lastDrawTime = 0;
             canvasLoopId = requestAnimationFrame(drawFrame);
 
             mediaRecorder.start();
